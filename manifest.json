@@ -1,0 +1,18 @@
+
+{
+  "name": "HydroFlow - Nhắc uống nước",
+  "short_name": "HydroFlow",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "description": "Ứng dụng nhắc nhở uống nước thông minh.",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3105/3105807.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
