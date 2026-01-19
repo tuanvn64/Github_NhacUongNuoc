@@ -15,9 +15,9 @@ const App: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState<string | null>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   
-  const lastNotifiedTimeRef = useRef<number>(0);
+  // Sử dụng ref để lưu chỉ số chu kỳ (interval index) đã thông báo gần nhất
+  const lastIntervalIndexRef = useRef<number>(-1);
 
-  // Load settings từ localStorage
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -30,7 +30,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Lắng nghe sự kiện cài đặt PWA
   useEffect(() => {
     const handler = (e: any) => {
       e.preventDefault();
@@ -47,7 +46,6 @@ const App: React.FC = () => {
     if (outcome === 'accepted') setDeferredPrompt(null);
   };
 
-  // Cập nhật trạng thái quyền liên tục
   useEffect(() => {
     if (!('Notification' in window)) return;
     const interval = setInterval(() => {
@@ -60,7 +58,6 @@ const App: React.FC = () => {
 
   const t = TRANSLATIONS[settings.language] || TRANSLATIONS['en'];
 
-  // HÀM GỬI THÔNG BÁO TỐI ƯU
   const triggerNotification = useCallback(async (title: string, body: string) => {
     if (!('Notification' in window)) return;
 
@@ -76,6 +73,7 @@ const App: React.FC = () => {
       try {
         const registration = await navigator.serviceWorker.ready;
         if (registration) {
+          // renotify: true giúp điện thoại rung/chuông lại ngay cả khi thông báo cũ chưa bị tắt
           await registration.showNotification(title, {
             body,
             icon,
@@ -94,10 +92,11 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // BỘ ĐẾM NGƯỢC (MM:SS)
+  // Logic bộ đếm và thông báo mới
   useEffect(() => {
     if (!settings.notificationsEnabled || permissionStatus !== 'granted') {
       setTimeLeft(null);
+      lastIntervalIndexRef.current = -1; // Reset khi tắt
       return;
     }
 
@@ -110,21 +109,33 @@ const App: React.FC = () => {
       const startSecs = sh * 3600 + sm * 60;
       const endSecs = eh * 3600 + em * 60;
 
+      // Trong khoảng thời gian hoạt động
       if (nowTotalSeconds >= startSecs && nowTotalSeconds <= endSecs) {
-        const intervalSecs = settings.reminderInterval * 60;
+        const intervalSecs = Math.max(1, settings.reminderInterval) * 60;
         const elapsedSinceStart = nowTotalSeconds - startSecs;
-        const secondsToNext = intervalSecs - (elapsedSinceStart % intervalSecs);
+        
+        // Tính xem hiện tại đang ở chu kỳ thứ mấy (0, 1, 2...)
+        const currentIntervalIndex = Math.floor(elapsedSinceStart / intervalSecs);
+        const secondsInCurrentInterval = elapsedSinceStart % intervalSecs;
+        const secondsToNext = intervalSecs - secondsInCurrentInterval;
         
         const m = Math.floor(secondsToNext / 60);
         const s = secondsToNext % 60;
         setTimeLeft(`${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
 
-        if (elapsedSinceStart % intervalSecs === 0 && lastNotifiedTimeRef.current !== Math.floor(nowTotalSeconds/60)) {
+        // KIỂM TRA BẮN THÔNG BÁO:
+        // Nếu đây là lần đầu chạy, gán index hiện tại để không bắn ngay lập tức khi vừa mở app
+        if (lastIntervalIndexRef.current === -1) {
+          lastIntervalIndexRef.current = currentIntervalIndex;
+        } 
+        // Nếu index hiện tại lớn hơn index đã bắn gần nhất -> Đã bước sang chu kỳ mới
+        else if (currentIntervalIndex > lastIntervalIndexRef.current) {
           triggerNotification(t.remindTitle, t.remindBody);
-          lastNotifiedTimeRef.current = Math.floor(nowTotalSeconds/60);
+          lastIntervalIndexRef.current = currentIntervalIndex;
         }
       } else {
         setTimeLeft(null);
+        lastIntervalIndexRef.current = -1;
       }
     };
 
@@ -136,6 +147,8 @@ const App: React.FC = () => {
   const saveSettings = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ settings }));
     setHasUnsavedChanges(false);
+    // Khi nhấn lưu, reset index để bắt đầu tính chu kỳ mới từ thời điểm này
+    lastIntervalIndexRef.current = -1; 
     if (settings.notificationsEnabled) {
       triggerNotification(t.notifTitle, t.notifBody);
     }
@@ -156,11 +169,11 @@ const App: React.FC = () => {
             <div className="flex items-center gap-3">
               <Smartphone size={24} />
               <div>
-                <p className="text-xs font-bold">Cài đặt HydroFlow</p>
-                <p className="text-[10px] opacity-80">Thông báo ổn định hơn</p>
+                <p className="text-xs font-bold">{t.install} HydroFlow</p>
+                <p className="text-[10px] opacity-80">{t.installDesc}</p>
               </div>
             </div>
-            <button onClick={installPWA} className="bg-white text-blue-600 px-4 py-1.5 rounded-full text-[10px] font-black">CÀI ĐẶT</button>
+            <button onClick={installPWA} className="bg-white text-blue-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase">{t.install}</button>
           </div>
         )}
 
@@ -173,44 +186,43 @@ const App: React.FC = () => {
                 {permissionStatus === 'denied' ? t.blocked : (settings.notificationsEnabled ? t.nextReminder : t.reminders)}
               </p>
               <p className="text-xl font-black text-slate-700 leading-none font-mono tracking-tight mt-1 uppercase">
-                {permissionStatus === 'denied' ? 'BỊ CHẶN' : (settings.notificationsEnabled 
+                {permissionStatus === 'denied' ? t.blocked : (settings.notificationsEnabled 
                   ? (timeLeft || t.outsideHours)
                   : t.off)}
               </p>
             </div>
           </div>
           
-          {/* NÚT THỬ THÔNG BÁO */}
           <button 
             onClick={() => triggerNotification(t.remindTitle, t.testSuccess)}
             className="px-4 py-4 bg-white rounded-[24px] shadow-md border border-slate-50 flex flex-col items-center justify-center gap-2 active:scale-95 transition-all text-blue-600 min-w-[120px] shrink-0"
           >
             <PlayCircle size={32} strokeWidth={2} />
-            <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none">THỬ THÔNG BÁO</span>
+            <span className="text-[10px] font-black uppercase tracking-tight text-center leading-none">{t.testNotif}</span>
           </button>
         </div>
 
-        {/* Hướng dẫn sửa lỗi */}
+        {/* Permission Guide */}
         {permissionStatus === 'denied' && (
           <div className="bg-red-50 border border-red-100 p-5 rounded-[28px] flex items-start gap-4">
             <Lock size={20} className="text-red-500 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-xs text-red-800 font-bold uppercase tracking-tight leading-none mb-2">Cách bật lại?</p>
+              <p className="text-xs text-red-800 font-bold uppercase tracking-tight leading-none mb-2">{t.howToFix}</p>
               <p className="text-[10px] text-red-700 leading-relaxed font-medium">
-                Bấm vào <span className="font-bold">biểu tượng ổ khóa (🔒)</span> hoặc <span className="font-bold">3 chấm</span> ở góc trình duyệt → Cài đặt → Thông báo → Cho phép.
+                {t.fixInstruction}
               </p>
             </div>
           </div>
         )}
 
-        {/* NHẮC NHỞ Switch Box */}
+        {/* Main Switch */}
         <div className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className={`p-3 rounded-2xl ${settings.notificationsEnabled ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
               <Bell size={24} />
             </div>
             <div>
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight leading-none mb-1">NHẮC NHỞ</h3>
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight leading-none mb-1">{t.reminders}</h3>
               <p className="text-xs text-slate-400 font-medium lowercase leading-none">{settings.notificationsEnabled ? t.active : t.off}</p>
             </div>
           </div>
@@ -232,24 +244,24 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        {/* Time Inputs - Đã giảm font size và bỏ overflow-hidden */}
+        {/* Time Inputs */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm relative">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3">BẮT ĐẦU</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3 uppercase">{t.start}</label>
             <input type="time" value={settings.startTime} onChange={(e) => { setSettings(s => ({...s, startTime: e.target.value})); setHasUnsavedChanges(true); }} className="w-full bg-transparent border-none p-0 text-xl font-black text-slate-700 focus:ring-0 leading-none" />
           </div>
           <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm relative">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3">KẾT THÚC</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-3 uppercase">{t.end}</label>
             <input type="time" value={settings.endTime} onChange={(e) => { setSettings(s => ({...s, endTime: e.target.value})); setHasUnsavedChanges(true); }} className="w-full bg-transparent border-none p-0 text-xl font-black text-slate-700 focus:ring-0 leading-none" />
           </div>
         </div>
 
-        {/* Frequency Slider - Cho phép từ 1 phút */}
+        {/* Frequency Slider */}
         <div className="bg-white p-7 rounded-[32px] border border-slate-100 shadow-sm space-y-5">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
               <Timer size={18} className="text-blue-500" />
-              <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">TẦN SUẤT</h4>
+              <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest uppercase">{t.frequency}</h4>
             </div>
             <span className="text-xl font-black text-blue-600">{settings.reminderInterval} <span className="text-xs font-normal text-slate-400 lowercase">{t.mins}</span></span>
           </div>
@@ -268,7 +280,7 @@ const App: React.FC = () => {
             }`}
           >
             <Save size={20} />
-            <span className="uppercase tracking-tight">Lưu lịch nhắc nhở</span>
+            <span className="uppercase tracking-tight">{t.save}</span>
           </button>
         </div>
 
@@ -279,7 +291,7 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-sm rounded-t-[40px] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-300">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-              <h2 className="font-black text-slate-800 text-lg uppercase tracking-tight">Ngôn ngữ</h2>
+              <h2 className="font-black text-slate-800 text-lg uppercase tracking-tight">LANGUAGE / NGÔN NGỮ</h2>
               <button onClick={() => setIsLangModalOpen(false)} className="bg-slate-100 p-2 rounded-full text-slate-400"><X size={20} /></button>
             </div>
             <div className="max-h-[60vh] overflow-y-auto py-4 px-2 no-scrollbar">
