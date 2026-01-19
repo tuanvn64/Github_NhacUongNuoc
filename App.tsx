@@ -1,22 +1,23 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import Layout from './components/Layout';
-import { UserSettings } from './types';
-import { DEFAULT_SETTINGS, STORAGE_KEY, LANGUAGES, TRANSLATIONS } from './constants';
-import { Bell, Timer, Save, X, PlayCircle, Lock, Smartphone } from 'lucide-react';
+import React from 'react';
+import TestComponent from './components/TestComponent';
 
 const App: React.FC = () => {
-  const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [isLangModalOpen, setIsLangModalOpen] = useState(false);
-  const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>(
-    typeof Notification !== 'undefined' ? Notification.permission : 'default'
+  return (
+    <div style={{ padding: '20px', backgroundColor: 'lightblue', color: 'darkblue' }}>
+      <h1 style={{ fontSize: '24px', fontWeight: 'bold' }}>HydroFlow Test</h1>
+      <p>If you see this with blue background, the app is working!</p>
+      <TestComponent />
+    </div>
   );
-  const [timeLeft, setTimeLeft] = useState<string | null>(null);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  
-  // Sử dụng ref để lưu chỉ số chu kỳ (interval index) đã thông báo gần nhất
-  const lastIntervalIndexRef = useRef<number>(-1);
+};
+  return (
+    <div className="p-4">
+      <h1 className="text-2xl font-bold text-blue-600">HydroFlow Test</h1>
+      <p>If you see this, the app is working!</p>
+    </div>
+  );
+};
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
